@@ -1,0 +1,19 @@
+nas.local {
+# Redirige la API a la app de Node.js (que Docker expone en el puerto 3001)
+reverse_proxy /api/* localhost:3001
+
+# Sirve el frontend estático (compilado de Vue)
+file_server {
+	root /srv/nas-ui
+}
+
+# Activa la compresión Gzip
+encode gzip
+
+# (Opcional) Registros de acceso
+log {
+	output file /var/log/caddy/nas.local.log
+}
+
+
+}

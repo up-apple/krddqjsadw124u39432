@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '127.0.0.1:3001:3001'
+    restart: unless-stopped
+    volumes:
+      - '/mnt/nas_data:/data'
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: '12G'
