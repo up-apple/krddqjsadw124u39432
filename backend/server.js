@@ -6,13 +6,23 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 
 // Assuming cryptoUtils.js is in the same directory
-const { hashPassword, verifyPassword, deriveKeyFromPassword, encryptKeychainItem, decryptKeychainItem } = require('./cryptoUtils.js');
+const { verifyPassword, deriveKeyFromPassword } = require('./cryptoUtils.js');
 
 // --- Configuration ---
 const PORT = 3001;
 const NAS_DATA_PATH = '/mnt/nas_data/files'; // Directory for LUKS mounted drive
 // IMPORTANT: Store secrets in environment variables, not in code!
-const JWT_SECRET = 'your-super-secret-and-long-jwt-secret-key'; 
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-and-long-jwt-secret-key-for-dev'; 
+
+// --- In-memory user simulation (for demonstration purposes) ---
+const activeSessions = new Map();
+const testUser = {
+  username: 'admin',
+  userId: 'admin-001',
+  passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$QiylJjlvX2v7N/HVCPrJqg$tAVxC8NSZoYuo/wcxPWz0BLJSkDNoDZ8rxoyD4yRZoc',
+  salt: Buffer.from('mi-salt-secreto-unico', 'utf-8')
+};
+
 
 // --- Express App Setup ---
 const app = express();
@@ -58,24 +68,43 @@ const checkAuth = (req, res, next) => {
 // --- API Routes ---
 
 // POST /api/auth/login - Authenticate user and return JWT
-app.post('/api/auth/login', loginRateLimiter, (req, res) => {
-  // In a real implementation:
-  // 1. const { username, password } = req.body;
-  // 2. Fetch user from database by username.
-  // 3. const isValid = await verifyPassword(user.passwordHash, password);
-  // 4. If valid, create JWT.
-  
-  // For now, just returning a dummy token for a test user.
-  const token = jwt.sign(
-    { userId: 'test-user-id', email: 'test@example.com' },
-    JWT_SECRET,
-    { expiresIn: '1h' } // Token expires in 1 hour
-  );
+app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
+  const { username, password } = req.body;
 
-  res.status(200).json({
-    message: 'Login successful (simulation)',
-    token: token
-  });
+  if (username !== testUser.username) {
+    return res.status(401).json({ message: 'Authentication failed.' });
+  }
+
+  try {
+    const isValid = await verifyPassword(testUser.passwordHash, password);
+
+    if (!isValid) {
+      return res.status(401).json({ message: 'Authentication failed.' });
+    }
+
+    // Derive AES key from password and salt
+    const derivedKey = await deriveKeyFromPassword(password, testUser.salt);
+
+    // Store the derived key in our "session" map
+    activeSessions.set(testUser.userId, derivedKey);
+
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: testUser.userId, username: testUser.username },
+      JWT_SECRET,
+      { expiresIn: '1h' } // Token expires in 1 hour
+    );
+
+    // Return token and user info (excluding sensitive data)
+    res.status(200).json({
+      token,
+      userId: testUser.userId
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'An internal error occurred during login.' });
+  }
 });
 
 // GET /api/files - Get list of files from the secure directory
